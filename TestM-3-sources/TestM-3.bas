@@ -1,71 +1,43 @@
-'Copyright Théo Zimmermann, février 2005
+'Copyright ThÃ©o Zimmermann, fÃ©vrier 2005
 '
-'Contactez-moi à admin@test-pedago.fr
-'
-'Ce logiciel est un programme informatique servant à s'entraîner sur
-'les tables de multiplication. 
-'
-'Ce logiciel est régi par la licence CeCILL soumise au droit français et
-'respectant les principes de diffusion des logiciels libres. Vous pouvez
-'utiliser, modifier et/ou redistribuer ce programme sous les conditions
-'de la licence CeCILL telle que diffusée par le CEA, le CNRS et l'INRIA 
-'sur le site "http://www.cecill.info".
-'
-'En contrepartie de l'accessibilité au code source et des droits de copie,
-'de modification et de redistribution accordés par cette licence, il n'est
-'offert aux utilisateurs qu'une garantie limitée.  Pour les mêmes raisons,
-'seule une responsabilité restreinte pèse sur l'auteur du programme,  le
-'titulaire des droits patrimoniaux et les concédants successifs.
-'
-'A cet égard  l'attention de l'utilisateur est attirée sur les risques
-'associés au chargement,  à l'utilisation,  à la modification et/ou au
-'développement et à la reproduction du logiciel par l'utilisateur étant 
-'donné sa spécificité de logiciel libre, qui peut le rendre complexe à 
-'manipuler et qui le réserve donc à des développeurs et des professionnels
-'avertis possédant  des  connaissances  informatiques approfondies.  Les
-'utilisateurs sont donc invités à charger  et  tester  l'adéquation  du
-'logiciel à leurs besoins dans des conditions permettant d'assurer la
-'sécurité de leurs systèmes et ou de leurs données et, plus généralement, 
-'à l'utiliser et l'exploiter dans les mêmes conditions de sécurité. 
-'
-'Le fait que vous puissiez accéder à cet en-tête signifie que vous avez 
-'pris connaissance de la licence CeCILL, et que vous en avez accepté les
-'termes.
+'DistribuÃ© sous licence GNU GPL v3
 
 
-' Parmétrages initiaux:
+' ParmÃ©trages initiaux:
 
 1       SCREEN 0: CLS
 2       DIM A(150, 2), RR(150), TBLE(14)
 10      CLS
 
 
-' Affichage de l'écran d'accueil :
+' Affichage de l'Ã©cran d'accueil :
 20      PRINT " ", , "TEST M 3.0"
-22      PRINT "Programme conçu et réalisé dans sa 1ère version par Théo Zimmermann - Avril 2005"
-	'PRINT "Pour plus de détails et pour la documentation, voir le site internet :"
-' Réglage des options :
+22      PRINT "Programme conÃ§u et rÃ©alisÃ© dans sa 1Ã¨re version par ThÃ©o Zimmerman - Janvier-"
+	PRINT "FÃ©vrier 2005. Pour plus de dÃ©tails et pour la documentation, voir le site"
+	'2Ã¨me version : Avril 2005
+	'3Ã¨me version : Janvier 2008
+	PRINT "internet : www.test-pedago.fr"
+' RÃ©glage des options :
 
-' Initialisation du tableau TBLE destiné à stocker sur quelles tables l'utilisateur
-' veut s'entraîner
+' Initialisation du tableau TBLE destinÃ© Ã  stocker sur quelles tables l'utilisateur
+' veut s'entraÃ®ner
 25      FOR I = 0 TO 14
 		TBLE(I) = 0
 	NEXT
 
 26      PRINT
-	PRINT "Si tu veux t'entraîner sur une seule table, tape son chiffre (1 à 15)"
-	INPUT "Si tu veux t'entraîner sur toutes les tables de 1 à 10, tape le chiffre 0 : ", TABLE$
-	'PRINT "Tu peux aussi choisir une plage par exemple 4-6 pour t'entraîner sur les tables"
-	'PRINT "de 4 à 6 ou en entrant simplement -15 toutes les tables à partir de 3"
-	'PRINT "Enfin, tu peux combiner les plages avec l'opérateur '+' (ex: -6+11-12)"
+	PRINT "Si tu veux t'entraÃ®ner sur une seule table, tape son chiffre (1 Ã  15)"
+	INPUT "Si tu veux t'entraÃ®ner sur toutes les tables de 1 Ã  10, tape le chiffre 0 : ", TABLE$
+	'PRINT "Tu peux aussi choisir une plage par exemple 4-6 pour t'entraÃ®ner sur les tables"
+	'PRINT "de 4 Ã  6 ou en entrant simplement -15 toutes les tables Ã  partir de 3"
+	'PRINT "Enfin, tu peux combiner les plages avec l'opÃ©rateur '+' (ex: -6+11-12)"
 	'INPUT "", TABLE$
 	IF (LEN(TABLE$) = 0) THEN 26
 	IF (NOT (LEN(TABLE$) = 1 OR (VAL(LEFT$(TABLE$, 2)) < 16 AND VAL(LEFT$(TABLE$, 2)) > 9))) THEN 27
 	NB = VAL(TABLE$)
 	IF (NB = 0) THEN FOR I = 0 TO 9: TBLE(I) = -1: NEXT: GOTO 28
 	IF (NB > 0 AND NB < 16) THEN TBLE(NB - 1) = -1: GOTO 28
-' gestion de chaînes plus complexes
-' ne pas oublier de commenter ces lignes
+' gestion de chaÃ®nes plus complexes
 ' attention gestion des nb >=10
 27      IF (LEFT$(TABLE$, 1) = "-") THEN BORNEMIN = 3 ELSE BORNEMIN = VAL(LEFT$(TABLE$, 1)): TABLE$ = RIGHT$(TABLE$, LEN(TABLE$) - 1)
 	NB = VAL(LEFT$(TABLE$, 1))
@@ -88,18 +60,18 @@
 	FOR I = 0 TO 14
 		IF (TBLE(I) = -1) THEN NTA = NTA + 10
 	NEXT
-30      PRINT "Choisis le nombre de questions (1 à "; NTA; "): ";
+30      PRINT "Choisis le nombre de questions (1 Ã  "; NTA; "): ";
 31      INPUT "", N
 32      IF (N > NTA OR N < 1) THEN 30
-33      INPUT "Choisis la durée maximale pour répondre à chaque question (1 à 10 secondes): ", T
+33      INPUT "Choisis la durÃ©e maximale pour rÃ©pondre Ã  chaque question (1 Ã  10 secondes): ", T
 34      IF (T > 10 OR T < 1) THEN 33
 
-' Fin du réglage des options
+' Fin du rÃ©glage des options
 40      CLS
 50      PRINT " ", , "TEST M 3.0"
 51      PRINT
 
-' Les tableaux sont vidés
+' Les tableaux sont vidÃ©s
 52      FOR I = 1 TO N
 53              RR(I) = 0
 54              FOR J = 1 TO 2
@@ -107,35 +79,35 @@
 56              NEXT J
 57      NEXT I
 
-' Récapitulatif des paramètres définis
-60      PRINT "Tu as DEUX ESSAIS et "; T; " SECONDES par essai pour répondre"
-70      PRINT "Le premier essai vaut 3 points, le deuxième vaut 1 point"
+' RÃ©capitulatif des paramÃ¨tres dÃ©finis
+60      PRINT "Tu as DEUX ESSAIS et "; T; " SECONDES par essai pour rÃ©pondre"
+70      PRINT "Le premier essai vaut 3 points, le deuxiÃ¨me vaut 1 point"
 	PRINT
-72      PRINT "Tape simplement ta réponse, tu n'as pas besoin de taper sur Entrée"
+72      PRINT "Tape simplement ta rÃ©ponse, tu n'as pas besoin de taper sur EntrÃ©e"
 	PRINT "Par contre si tu as choisi un temps long et que tu ne veux pas attendre, tu peux"
-	PRINT "toujours utiliser la touche Entrée pour passer à la question suivante"
+	PRINT "toujours utiliser la touche EntrÃ©e pour passer Ã  la question suivante"
 	PRINT
-	PRINT "Tu peux aussi utiliser la touche Retour arrière pour te corriger mais méfie-toi:"
-	PRINT "si tu as choisi un temps très court cela pourrait te déconcentrer plus qu'autre"
+	PRINT "Tu peux aussi utiliser la touche Retour arriÃ¨re pour te corriger mais mÃ©fie-toi:"
+	PRINT "si tu as choisi un temps trÃ¨s court cela pourrait te dÃ©concentrer plus qu'autre"
 	PRINT "chose... "; ""
 	PRINT
-74      PRINT "Si tu veux t'arrêter tape sur la touche Echap"
-80      PRINT "Appuie d'abord sur une touche quelconque pour démarrer"
+74      PRINT "Si tu veux t'arrÃªter tape sur la touche Echap"
+80      PRINT "Appuie d'abord sur une touche quelconque pour dÃ©marrer"
 82      A$ = ""
 
 ' Cette boucle permet de faire deux choses :
 
 ' 1: Attendre que l'utilisateur appuie sur une touche du clavier
 
-' 2: Démarrer la série aléatoire car sinon les questions se suivent toujours dans le même ordre (le hasard est initialisé
+' 2: DÃ©marrer la sÃ©rie alÃ©atoire car sinon les questions se suivent toujours dans le mÃªme ordre (le hasard est initialisÃ©
 
-' de cette manière).
+' de cette maniÃ¨re).
 84      WHILE A$ = ""
 86              A1 = INT(RND * 10)
 87              A$ = INKEY$
 88      WEND
 
-' Définitions de quelques variables
+' DÃ©finitions de quelques variables
 98      SCORE = 0
 99      NR = 0
 
@@ -143,10 +115,10 @@
 100     FOR M = 1 TO N
 108             PRINT
 
-' Affichage du numéro de la question
-110             PRINT "Question n°"; M
+' Affichage du numÃ©ro de la question
+110             PRINT "Question nÂ°"; M
 
-' Tirage au hasard de la question (correspondant aux paramêtres entrés par l'utilisateur)
+' Tirage au hasard de la question (correspondant aux paramÃªtres entrÃ©s par l'utilisateur)
 112             MM = M - 1
 120             K = 1
 125             A1 = INT(RND * 15)
@@ -155,17 +127,17 @@
 150             A2 = INT(RND * 10) + 1
 161             IF M = 1 THEN 167
 
-' Vérification que cette question n'a encore jamais été posée
+' VÃ©rification que cette question n'a encore jamais Ã©tÃ© posÃ©e
 162             DEJA = 0
 163             FOR I = 1 TO MM
 164                     IF (A1 = A(I, 1) AND A2 = A(I, 2)) THEN DEJA = 1
 165             NEXT I
 166             IF DEJA = 1 THEN 125
 
-' Et enregistrement de la question pour les vérifications futures
+' Et enregistrement de la question pour les vÃ©rifications futures
 167             A(M, 1) = A1: A(M, 2) = A2
 
-' Vidage du tampon gardant en mémoire les touches tapées au clavier (accesible à l'aide d' INKEY$)
+' Vidage du tampon gardant en mÃ©moire les touches tapÃ©es au clavier (accesible Ã  l'aide d' INKEY$)
 171             e$ = INKEY$
 172             WHILE e$ <> ""
 173                     e$ = INKEY$
@@ -175,18 +147,17 @@
 175             PRINT A1; " x "; A2; " = ";
 176             R$ = ""
 
-' Démarrage de la gestion du temps (le TIMER donne un nombre en secondes)
-180             TA = TIMER
-190             TPS = 0
+' DÃ©marrage de la gestion du temps (le TIMER donne un nombre en secondes)
+180     	TA=TIMER
+190     	TPS=0
+195		TB=TIMER-TA
+' Boucle pendant laquelle l'utilisateur entre (ou pas) sa rÃ©ponse
+200     	WHILE TPS<T
+' VÃ©rfication du temps
+201     		TC=TIMER-TA
+202     		TPS=TC-TB
 
-' Boucle pendant laquelle l'utilisateur entre (ou pas) sa réponse
-200             WHILE TPS < T
-
-' Vérfication du temps
-201                     TB = TIMER
-202                     TPS = TB - TA
-
-' Récupération de la plus ancienne touche tapée et non traitée
+' RÃ©cupÃ©ration de la plus ancienne touche tapÃ©e et non traitÃ©e
 203                     C$ = INKEY$
 
 ' Si le tampon est vide on boucle de nouveau
@@ -203,37 +174,37 @@
 210                     PRINT " ": LOCATE LIN, COL
 211                     GOTO 230
 
-' et si c'est un chiffre et que le résultat n'est pas encore trop long, on le raccroche à ce dernier
+' et si c'est un chiffre et que le rÃ©sultat n'est pas encore trop long, on le raccroche Ã  ce dernier
 214                     IF (VAL(C$) = 0 AND NOT C$ = "0") THEN C$ = ""
 216                     IF LEN(R$) > 2 THEN C$ = ""
 218                     PRINT C$;
 220                     R$ = R$ + C$
 230             WEND
 
-' Calcul du résultat
+' Calcul du rÃ©sultat
 235             RESUL = A1 * A2
 
-' Si l'utilisateur a donné une réponse on la vérifie après l'avoir transformée en nombre (c'était jusque là une chaîne
-' de caractères)
+' Si l'utilisateur a donnÃ© une rÃ©ponse on la vÃ©rifie aprÃ¨s l'avoir transformÃ©e en nombre (c'Ã©tait jusque lÃ  une chaÃ®ne
+' de caractÃ¨res)
 250             IF R$ = "" THEN GOTO 313
 280             R = VAL(R$)
 300             IF R = RESUL THEN GOTO 360
 310             PRINT "   FAUX": GOTO 315
 313             PRINT
 
-' Si l'utilisateur a donné une réponse fausse,
+' Si l'utilisateur a donnÃ© une rÃ©ponse fausse,
 
-' Si c'est son deuxième essai, on affiche le bon résultat et on repose une nouvelle question
-315             IF K = 2 THEN PRINT "Bon résultat : "; RESUL
+' Si c'est son deuxiÃ¨me essai, on affiche le bon rÃ©sultat et on repose une nouvelle question
+315             IF K = 2 THEN PRINT "Bon rÃ©sultat : "; RESUL
 320             IF K > 1 THEN GOTO 400
 
-' Sinon on lui donne une deuxième chance
+' Sinon on lui donne une deuxiÃ¨me chance
 328             PRINT
-330             PRINT "Deuxième essai"
+330             PRINT "DeuxiÃ¨me essai"
 340             K = K + 1
 350             GOTO 171
 
-' Pour une bonne réponse, on calcule les points et on les affiche
+' Pour une bonne rÃ©ponse, on calcule les points et on les affiche
 360             RR(M) = 1
 361             NR = NR + 1
 362             IF K = 1 THEN SC = 3
@@ -264,13 +235,13 @@
 ' Commentaire si la note est bonne
 450     IF NOTE >= 16 THEN PRINT "BRAVO!!!"
 
-' Si il y a eu des erreurs, récapitulatif
+' Si il y a eu des erreurs, rÃ©capitulatif
 451     IF NR < N THEN PRINT
-452     IF NR < N THEN PRINT "Voici les réponses que tu aurais dû trouver"
+452     IF NR < N THEN PRINT "Voici les rÃ©ponses que tu aurais dÃ» trouver"
 453     FOR M = 1 TO N
 454             IF RR(M) = 1 THEN 458
 455             RESUL = A(M, 1) * A(M, 2)
-456             PRINT "Question n°"; M; " : "; A(M, 1); " x "; A(M, 2); " = "; RESUL
+456             PRINT "Question nÂ°"; M; " : "; A(M, 1); " x "; A(M, 2); " = "; RESUL
 458     NEXT M
 459     PRINT
 ' On demande si on recommence
