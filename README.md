@@ -4,7 +4,7 @@ Test-Pedago
 Deux logiciels éducatifs pour s'entraîner aux tables de multiplication
 et aux conjugaisons françaises.
 
-[Vous trouverez une description plus complète ici](http://www.test-pedago.fr).
+[Vous trouverez une description plus complète ici](http://www.theozimmermann.net/test-pedago/).
 
 Le code de TestM est en QuickBasic.
 Le code de TestL est en C++ et fait appel à la bibliothèque Qt4.
