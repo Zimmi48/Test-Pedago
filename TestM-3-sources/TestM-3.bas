@@ -16,7 +16,7 @@
 	PRINT "Février 2005. Pour plus de détails et pour la documentation, voir le site"
 	'2ème version : Avril 2005
 	'3ème version : Janvier 2008
-	PRINT "internet : www.test-pedago.fr"
+	PRINT "internet : www.theozimmermann.net/test-pedago"
 ' Réglage des options :
 
 ' Initialisation du tableau TBLE destiné à stocker sur quelles tables l'utilisateur
