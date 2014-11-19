@@ -68,7 +68,7 @@ int main()
     cout << "Logiciel pour s'interroger appartenant à la suite Pedago. Version 1.0" << endl;
     cout << "Conçu \"sur mesure\" par Théo Zimmermann pour Aline Memmi, institutrice" << endl;
     cout << "décembre 2007 - mars 2008 pour la première version" << endl;
-    cout << "Pour en savoir plus, rendez-vous sur www.test-pedago.fr" << endl;
+    cout << "Pour en savoir plus, rendez-vous sur www.theozimmermann.net/test-pedago" << endl;
 
     // boucle principale : sert à recommencer le programme autant de fois que voulu
     do
