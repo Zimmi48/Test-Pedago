@@ -3,17 +3,18 @@ module Game exposing (..)
 import Html exposing (Html)
 import Keyboard exposing (KeyCode)
 import Lib exposing (..)
+import Process
+import Task
 
 
 main : Program Never State Msg
 main =
     Html.program
-        { init = pureState initState
+        { init = init
         , view = view
-        , update = pureUpdate update
+        , update = update
         , subscriptions =
             \_ -> Keyboard.downs Key
-            -- TODO: stop listening to keyboard during one second after change of state
         }
 
 
@@ -50,16 +51,24 @@ type alias State =
     , done : List ( Question, Int )
     , currentQuestion : Question
     , questionState : QuestionState
+    , locked : Bool
     }
 
 
-initState : State
-initState =
-    { remaining = [ ( 2, 3, 6 ), ( 6, 7, 42 ) ]
-    , done = []
-    , currentQuestion = ( 9, 3, 27 )
-    , questionState = initQuestionState
-    }
+init : ( State, Cmd Msg )
+init =
+    let
+        question =
+            ( 9, 3, 27 )
+    in
+        ( { remaining = [ ( 2, 3, 6 ), ( 6, 7, 42 ) ]
+          , done = []
+          , currentQuestion = question
+          , questionState = initQuestionState
+          , locked = False
+          }
+        , setTimeout ( question, initRemainings )
+        )
 
 
 initQuestionState : QuestionState
@@ -139,35 +148,87 @@ viewQuestionState default state =
 
 type Msg
     = Key KeyCode
+    | Unlock
+    | TimeOut Id
 
 
-update : Msg -> State -> State
+type alias Id =
+    ( Question, Nat )
+
+
+
+-- Create a unique id from the question and the remaining trials
+-- One must assume that there won't be identical questions in one set
+-- TODO: make this impossible
+
+
+update : Msg -> State -> ( State, Cmd Msg )
 update msg state =
     case msg of
         Key k ->
-            let
-                key =
-                    keyInterp k
-            in
-                case
-                    ( state.questionState
-                    , state.currentQuestion
-                    , state.remaining
-                    , key
-                    )
-                of
-                    ( RemainingTrials r, ( _, _, res ), _, _ ) ->
-                        { state | questionState = updateQuestionState res key r }
+            if state.locked then
+                pureState state
+            else
+                let
+                    key =
+                        keyInterp k
+                in
+                    case
+                        ( state.questionState
+                        , state.currentQuestion
+                        , state.remaining
+                        , key
+                        )
+                    of
+                        ( RemainingTrials r, ( _, _, res ), _, _ ) ->
+                            let
+                                ( newQuestionState, cmd ) =
+                                    updateQuestionState state.currentQuestion key r
+                            in
+                                ( { state | questionState = newQuestionState }, cmd )
 
-                    ( Done points, question, newQuestion :: questions, Enter ) ->
-                        { remaining = questions
-                        , done = ( question, points ) :: state.done
-                        , currentQuestion = newQuestion
-                        , questionState = initQuestionState
-                        }
+                        ( Done points, question, newQuestion :: questions, Enter ) ->
+                            ( { state
+                                | remaining = questions
+                                , done = ( question, points ) :: state.done
+                                , currentQuestion = newQuestion
+                                , questionState = initQuestionState
+                              }
+                              -- risk of confusion
+                              -- can we make it impossible to give the wrong id
+                            , setTimeout ( newQuestion, initRemainings )
+                            )
 
-                    _ ->
-                        state
+                        _ ->
+                            pureState state
+
+        Unlock ->
+            { state | locked = True } |> pureState
+
+        TimeOut ( question, nat ) ->
+            case ( state.questionState, state.currentQuestion ) of
+                ( RemainingTrials ( stateNat, ans ), ( _, _, res ) ) ->
+                    if question == state.currentQuestion && nat == stateNat then
+                        -- the timeout is valid
+                        let
+                            ( newQuestionState, cmd ) =
+                                checkIfGoodAnswer question nat ans
+                        in
+                            { state
+                                | questionState = newQuestionState
+                                , locked =
+                                    True
+                                    -- we lock for a little while in case the user
+                                    -- presses a key just after the timeout
+                            }
+                                ! [ cmd, unlockCmd ]
+                    else
+                        -- false alarm
+                        pureState state
+
+                _ ->
+                    -- false alarm
+                    pureState state
 
 
 type KeyInterp
@@ -189,14 +250,16 @@ keyInterp key =
         Ignore
 
 
-updateQuestionState : Int -> KeyInterp -> ( Nat, Answer ) -> QuestionState
-updateQuestionState res key ( nat, answer ) =
+updateQuestionState : Question -> KeyInterp -> ( Nat, Answer ) -> ( QuestionState, Cmd Msg )
+updateQuestionState question key ( nat, answer ) =
     case ( key, nat, answer ) of
         ( Digit d, nat, Nothing ) ->
             RemainingTrials ( nat, Just d )
+                |> pureState
 
         ( Digit d, nat, Just ans ) ->
             RemainingTrials ( nat, Just <| ans * 10 + d )
+                |> pureState
 
         ( Backspace, nat, Just ans ) ->
             RemainingTrials
@@ -210,20 +273,38 @@ updateQuestionState res key ( nat, answer ) =
                     else
                         Just newAns
                 )
+                |> pureState
 
         ( Enter, nat, Just ans ) ->
-            if ans == res then
-                Done (computePoints nat)
-            else
-                case nat of
-                    Zero ->
-                        Done 0
-
-                    Succ nat ->
-                        RemainingTrials ( nat, Nothing )
+            checkIfGoodAnswer question nat (Just ans)
 
         _ ->
             RemainingTrials ( nat, answer )
+                |> pureState
+
+
+checkIfGoodAnswer : Question -> Nat -> Maybe Int -> ( QuestionState, Cmd Msg )
+checkIfGoodAnswer (( _, _, res ) as question) nat answer =
+    let
+        badAnswer =
+            case nat of
+                Zero ->
+                    Done 0 |> pureState
+
+                Succ nat ->
+                    ( RemainingTrials ( nat, Nothing )
+                    , setTimeout ( question, nat )
+                    )
+    in
+        case answer of
+            Just ans ->
+                if ans == res then
+                    Done (computePoints nat) |> pureState
+                else
+                    badAnswer
+
+            Nothing ->
+                badAnswer
 
 
 computePoints : Nat -> number
@@ -234,3 +315,19 @@ computePoints nat =
 
         Succ nat ->
             2 * (computePoints nat) + 1
+
+
+
+-- Define commands
+
+
+setTimeout : Id -> Cmd Msg
+setTimeout id =
+    Process.sleep 10000
+        |> Task.perform (always <| TimeOut id)
+
+
+unlockCmd : Cmd Msg
+unlockCmd =
+    Process.sleep 500
+        |> Task.perform (always Unlock)
