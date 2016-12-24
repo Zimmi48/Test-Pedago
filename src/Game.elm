@@ -1,11 +1,17 @@
 module Game exposing (..)
 
 import Html exposing (Html)
+import Lib exposing (..)
 
 
 main : Program Never State msg
 main =
-    Html.beginnerProgram { model = initState, view = view, update = update }
+    Html.program
+        { init = pureState initState
+        , view = view
+        , update = pureUpdate update
+        , subscriptions = \_ -> Sub.none
+        }
 
 
 type alias Question =
