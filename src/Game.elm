@@ -12,7 +12,7 @@ main =
         , view = view
         , update = pureUpdate update
         , subscriptions =
-            \_ -> Keyboard.presses Key
+            \_ -> Keyboard.downs Key
             -- TODO: stop listening to keyboard during one second after change of state
         }
 
@@ -199,7 +199,17 @@ updateQuestionState res key ( nat, answer ) =
             RemainingTrials ( nat, Just <| ans * 10 + d )
 
         ( Backspace, nat, Just ans ) ->
-            RemainingTrials ( nat, Just <| ans // 10 )
+            RemainingTrials
+                ( nat
+                , let
+                    newAns =
+                        ans // 10
+                  in
+                    if newAns == 0 then
+                        Nothing
+                    else
+                        Just newAns
+                )
 
         ( Enter, nat, Just ans ) ->
             if ans == res then
