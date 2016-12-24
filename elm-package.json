@@ -1,7 +1,7 @@
 {
     "version": "1.0.0",
     "summary": "application educative",
-    "repository": "https://github.com/Zimmi48/Test-Pedago.git",
+    "repository": "https://github.com/Zimmi48/test-pedago.git",
     "license": "MPL2",
     "source-directories": [
         "src"
