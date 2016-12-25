@@ -14,7 +14,11 @@ main =
         , view = view
         , update = update
         , subscriptions =
-            \_ -> Keyboard.downs Key
+            \{ locked } ->
+                if locked then
+                    Sub.none
+                else
+                    Keyboard.downs Key
         }
 
 
@@ -166,41 +170,38 @@ update : Msg -> State -> ( State, Cmd Msg )
 update msg state =
     case msg of
         Key k ->
-            if state.locked then
-                pureState state
-            else
-                let
-                    key =
-                        keyInterp k
-                in
-                    case
-                        ( state.questionState
-                        , state.currentQuestion
-                        , state.remaining
-                        , key
+            let
+                key =
+                    keyInterp k
+            in
+                case
+                    ( state.questionState
+                    , state.currentQuestion
+                    , state.remaining
+                    , key
+                    )
+                of
+                    ( RemainingTrials r, ( _, _, res ), _, _ ) ->
+                        let
+                            ( newQuestionState, cmd ) =
+                                updateQuestionState state.currentQuestion key r
+                        in
+                            ( { state | questionState = newQuestionState }, cmd )
+
+                    ( Done points, question, newQuestion :: questions, Enter ) ->
+                        ( { state
+                            | remaining = questions
+                            , done = ( question, points ) :: state.done
+                            , currentQuestion = newQuestion
+                            , questionState = initQuestionState
+                          }
+                          -- risk of confusion
+                          -- can we make it impossible to give the wrong id
+                        , setTimeout ( newQuestion, initRemainings )
                         )
-                    of
-                        ( RemainingTrials r, ( _, _, res ), _, _ ) ->
-                            let
-                                ( newQuestionState, cmd ) =
-                                    updateQuestionState state.currentQuestion key r
-                            in
-                                ( { state | questionState = newQuestionState }, cmd )
 
-                        ( Done points, question, newQuestion :: questions, Enter ) ->
-                            ( { state
-                                | remaining = questions
-                                , done = ( question, points ) :: state.done
-                                , currentQuestion = newQuestion
-                                , questionState = initQuestionState
-                              }
-                              -- risk of confusion
-                              -- can we make it impossible to give the wrong id
-                            , setTimeout ( newQuestion, initRemainings )
-                            )
-
-                        _ ->
-                            pureState state
+                    _ ->
+                        pureState state
 
         Unlock ->
             { state | locked = False } |> pureState
