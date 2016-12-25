@@ -22,6 +22,10 @@ main =
         }
 
 
+type alias Config =
+    { timeout : Int }
+
+
 type alias Question =
     ( Int, Int, Int )
 
@@ -56,6 +60,7 @@ type alias State =
     , currentQuestion : Question
     , questionState : QuestionState
     , locked : Bool
+    , config : Config
     }
 
 
@@ -64,14 +69,18 @@ init =
     let
         question =
             ( 9, 3, 27 )
+
+        config =
+            { timeout = 5 }
     in
         ( { remaining = [ ( 2, 3, 6 ), ( 6, 7, 42 ) ]
           , done = []
           , currentQuestion = question
           , questionState = initQuestionState
           , locked = False
+          , config = config
           }
-        , setTimeout ( question, initRemainings )
+        , setTimeout config ( question, initRemainings )
         )
 
 
@@ -184,7 +193,11 @@ update msg state =
                     ( RemainingTrials r, ( _, _, res ), _, _ ) ->
                         let
                             ( newQuestionState, cmd ) =
-                                updateQuestionState state.currentQuestion key r
+                                updateQuestionState
+                                    state.config
+                                    state.currentQuestion
+                                    key
+                                    r
                         in
                             ( { state | questionState = newQuestionState }, cmd )
 
@@ -197,7 +210,7 @@ update msg state =
                           }
                           -- risk of confusion
                           -- can we make it impossible to give the wrong id
-                        , setTimeout ( newQuestion, initRemainings )
+                        , setTimeout state.config ( newQuestion, initRemainings )
                         )
 
                     _ ->
@@ -213,7 +226,7 @@ update msg state =
                         -- the timeout is valid
                         let
                             ( newQuestionState, cmd ) =
-                                checkIfGoodAnswer question nat ans
+                                checkIfGoodAnswer state.config question nat ans
                         in
                             { state
                                 | questionState = newQuestionState
@@ -251,8 +264,13 @@ keyInterp key =
         Ignore
 
 
-updateQuestionState : Question -> KeyInterp -> ( Nat, Answer ) -> ( QuestionState, Cmd Msg )
-updateQuestionState question key ( nat, answer ) =
+updateQuestionState :
+    Config
+    -> Question
+    -> KeyInterp
+    -> ( Nat, Answer )
+    -> ( QuestionState, Cmd Msg )
+updateQuestionState config question key ( nat, answer ) =
     case ( key, nat, answer ) of
         ( Digit d, nat, Nothing ) ->
             RemainingTrials ( nat, Just d )
@@ -277,15 +295,20 @@ updateQuestionState question key ( nat, answer ) =
                 |> pureState
 
         ( Enter, nat, Just ans ) ->
-            checkIfGoodAnswer question nat (Just ans)
+            checkIfGoodAnswer config question nat (Just ans)
 
         _ ->
             RemainingTrials ( nat, answer )
                 |> pureState
 
 
-checkIfGoodAnswer : Question -> Nat -> Maybe Int -> ( QuestionState, Cmd Msg )
-checkIfGoodAnswer (( _, _, res ) as question) nat answer =
+checkIfGoodAnswer :
+    Config
+    -> Question
+    -> Nat
+    -> Maybe Int
+    -> ( QuestionState, Cmd Msg )
+checkIfGoodAnswer config (( _, _, res ) as question) nat answer =
     let
         badAnswer =
             case nat of
@@ -294,7 +317,7 @@ checkIfGoodAnswer (( _, _, res ) as question) nat answer =
 
                 Succ nat ->
                     ( RemainingTrials ( nat, Nothing )
-                    , setTimeout ( question, nat )
+                    , setTimeout config ( question, nat )
                     )
     in
         case answer of
@@ -322,9 +345,12 @@ computePoints nat =
 -- Define commands
 
 
-setTimeout : Id -> Cmd Msg
-setTimeout id =
-    Process.sleep 10000
+setTimeout : Config -> Id -> Cmd Msg
+setTimeout { timeout } id =
+    timeout
+        * 1000
+        |> toFloat
+        |> Process.sleep
         |> Task.perform (always <| TimeOut id)
 
 
