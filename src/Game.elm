@@ -13,12 +13,7 @@ main =
         { init = init
         , view = view
         , update = update
-        , subscriptions =
-            \{ locked } ->
-                if locked then
-                    Sub.none
-                else
-                    Keyboard.downs Key
+        , subscriptions = subscriptions
         }
 
 
@@ -342,7 +337,7 @@ computePoints nat =
 
 
 
--- Define commands
+-- Commands and subscriptions
 
 
 setTimeout : Config -> Id -> Cmd Msg
@@ -358,3 +353,11 @@ unlockCmd : Cmd Msg
 unlockCmd =
     Process.sleep 500
         |> Task.perform (always Unlock)
+
+
+subscriptions : State -> Sub Msg
+subscriptions { locked } =
+    if locked then
+        Sub.none
+    else
+        Keyboard.downs Key
