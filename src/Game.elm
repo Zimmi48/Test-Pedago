@@ -203,7 +203,7 @@ update msg state =
                             pureState state
 
         Unlock ->
-            { state | locked = True } |> pureState
+            { state | locked = False } |> pureState
 
         TimeOut ( question, nat ) ->
             case ( state.questionState, state.currentQuestion ) of
