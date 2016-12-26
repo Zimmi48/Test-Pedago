@@ -14,7 +14,10 @@ main : Program Never (State ( Int, Int )) (Msg ( Int, Int ))
 main =
     let
         questions =
-            Set.fromList [ ( 9, 3 ), ( 2, 3 ), ( 6, 7 ) ]
+            List.range 2 9
+                |> (\l -> List.map (\x -> List.map ((,) x) l) l)
+                |> List.concat
+                |> Set.fromList
 
         config =
             { timeout = 5
@@ -24,7 +27,7 @@ main =
             }
     in
         Html.program
-            { init = init config questions
+            { init = init config questions 10
             , view = view
             , update = update
             , subscriptions = subscriptions
@@ -62,6 +65,7 @@ type alias Config comparable =
 
 type alias State comparable =
     { remainingQuestions : Set comparable
+    , nbRemainingQuestions : Int
     , pastQuestions : List { question : comparable, points : Int }
     , currentQuestion : QuestionState comparable
     , nextQuestion : Maybe comparable
@@ -82,9 +86,14 @@ type alias Id comparable =
     ( comparable, Nat )
 
 
-init : Config comparable -> Set comparable -> ( State comparable, Cmd (Msg comparable) )
-init config questions =
+init :
+    Config comparable
+    -> Set comparable
+    -> Int
+    -> ( State comparable, Cmd (Msg comparable) )
+init config questions nbQuestions =
     ( { remainingQuestions = questions
+      , nbRemainingQuestions = nbQuestions
       , pastQuestions = []
       , currentQuestion = None
       , nextQuestion = Nothing
@@ -103,7 +112,7 @@ view state =
             |> Html.ul []
         , viewCurrent state.config state.currentQuestion
         , "Questions restantes: "
-            ++ (state.remainingQuestions |> Set.size |> toString)
+            ++ (state.nbRemainingQuestions |> toString)
             |> Html.text
         ]
 
@@ -235,6 +244,7 @@ update msg state =
                     { state
                         | remainingQuestions =
                             Set.remove question state.remainingQuestions
+                        , nbRemainingQuestions = state.nbRemainingQuestions - 1
                     }
                         |> updateNextQuestion question
 
@@ -247,6 +257,7 @@ update msg state =
                         | nextQuestion = Just question
                         , remainingQuestions =
                             Set.remove question state.remainingQuestions
+                        , nbRemainingQuestions = state.nbRemainingQuestions - 1
                     }
                         |> pureState
 
@@ -294,11 +305,17 @@ checkAnswer :
     -> ( State comparable, Cmd (Msg comparable) )
 checkAnswer state { question, answer, trialsLeft } timeout =
     let
-        cmds =
+        unlockCmds =
             if timeout then
                 -- we lock for a little while in case the user
                 -- presses a key just after the timeout
                 [ unlockCmd ]
+            else
+                []
+
+        nextQuestionCmds =
+            if state.nbRemainingQuestions >= 1 then
+                [ chooseNextQuestion state.remainingQuestions ]
             else
                 []
     in
@@ -313,7 +330,7 @@ checkAnswer state { question, answer, trialsLeft } timeout =
                         }
                 , locked = timeout
             }
-                ! ([ chooseNextQuestion state.remainingQuestions ] ++ cmds)
+                ! (unlockCmds ++ nextQuestionCmds)
         else
             case trialsLeft of
                 Zero ->
@@ -321,7 +338,7 @@ checkAnswer state { question, answer, trialsLeft } timeout =
                         | currentQuestion = Done { question = question, points = 0 }
                         , locked = timeout
                     }
-                        ! ([ chooseNextQuestion state.remainingQuestions ] ++ cmds)
+                        ! (unlockCmds ++ nextQuestionCmds)
 
                 Succ nat ->
                     let
@@ -335,7 +352,9 @@ checkAnswer state { question, answer, trialsLeft } timeout =
                             | currentQuestion = Active questionState
                             , locked = timeout
                         }
-                            ! ([ setTimeout state.config questionState ] ++ cmds)
+                            ! ([ setTimeout state.config questionState ]
+                                ++ unlockCmds
+                              )
 
 
 updateNextQuestion :
