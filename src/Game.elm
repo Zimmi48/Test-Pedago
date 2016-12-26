@@ -7,7 +7,7 @@ import Process
 import Task
 
 
-main : Program Never State Msg
+main : Program Never (State ( Int, Int )) (Msg ( Int, Int ))
 main =
     Html.program
         { init = init
@@ -17,12 +17,11 @@ main =
         }
 
 
-type alias Config =
-    { timeout : Int }
-
-
-type alias Question =
-    ( Int, Int, Int )
+type alias Config question =
+    { timeout : Int
+    , answerOf : question -> String
+    , viewQuestion : question -> String
+    }
 
 
 type Nat
@@ -41,7 +40,7 @@ toInt nat =
 
 
 type alias Answer =
-    Maybe Int
+    Maybe String
 
 
 type QuestionState
@@ -49,26 +48,30 @@ type QuestionState
     | Done Int
 
 
-type alias State =
-    { remaining : List Question
-    , done : List ( Question, Int )
-    , currentQuestion : Question
+type alias State question =
+    { remaining : List question
+    , done : List ( question, Int )
+    , currentQuestion : question
     , questionState : QuestionState
     , locked : Bool
-    , config : Config
+    , config : Config question
     }
 
 
-init : ( State, Cmd Msg )
+init : ( State ( Int, Int ), Cmd (Msg ( Int, Int )) )
 init =
     let
         question =
-            ( 9, 3, 27 )
+            ( 9, 3 )
 
         config =
-            { timeout = 5 }
+            { timeout = 5
+            , answerOf = \( x, y ) -> toString (x * y)
+            , viewQuestion =
+                \( x, y ) -> toString x ++ " × " ++ toString y ++ " = "
+            }
     in
-        ( { remaining = [ ( 2, 3, 6 ), ( 6, 7, 42 ) ]
+        ( { remaining = [ ( 2, 3 ), ( 6, 7 ) ]
           , done = []
           , currentQuestion = question
           , questionState = initQuestionState
@@ -89,27 +92,27 @@ initRemainings =
     Succ Zero
 
 
-view : State -> Html msg
+view : State question -> Html msg
 view state =
     Html.div []
-        [ viewDone state.done
-        , viewCurrent state.currentQuestion state.questionState
+        [ viewDone state.config state.done
+        , viewCurrent state.config state.currentQuestion state.questionState
         , "Questions restantes: "
             ++ (state.remaining |> List.length |> toString)
             |> Html.text
         ]
 
 
-viewDone : List ( Question, Int ) -> Html msg
-viewDone =
-    List.map viewDoneQuestion >> Html.ul []
+viewDone : Config question -> List ( question, Int ) -> Html msg
+viewDone config =
+    List.map (viewDoneQuestion config) >> Html.ul []
 
 
-viewDoneQuestion : ( Question, Int ) -> Html msg
-viewDoneQuestion ( ( x, y, res ), score ) =
+viewDoneQuestion : Config question -> ( question, Int ) -> Html msg
+viewDoneQuestion config ( question, score ) =
     Html.li []
-        [ viewQuestion x y
-            ++ toString res
+        [ config.viewQuestion question
+            ++ config.answerOf question
             ++ " : "
             ++ toString score
             ++ " points."
@@ -117,24 +120,20 @@ viewDoneQuestion ( ( x, y, res ), score ) =
         ]
 
 
-viewCurrent : ( a, b, c ) -> QuestionState -> Html msg
-viewCurrent ( x, y, res ) state =
+viewCurrent : Config question -> question -> QuestionState -> Html msg
+viewCurrent config question state =
     let
-        ( info, answer ) =
-            viewQuestionState (toString res) state
+        ( info, currentAnswer ) =
+            viewQuestionState (config.answerOf question) state
     in
         Html.div []
-            [ Html.div [] [ viewQuestion x y ++ answer |> Html.text ]
+            [ Html.div []
+                [ config.viewQuestion question
+                    ++ currentAnswer
+                    |> Html.text
+                ]
             , Html.div [] [ info |> Html.text ]
             ]
-
-
-viewQuestion : a -> b -> String
-viewQuestion x y =
-    toString x
-        ++ " × "
-        ++ toString y
-        ++ " = "
 
 
 viewQuestionState : String -> QuestionState -> ( String, String )
@@ -142,26 +141,21 @@ viewQuestionState default state =
     case state of
         RemainingTrials ( nat, answer ) ->
             ( (nat |> toInt |> (+) 1 |> toString) ++ " essais restants."
-            , case answer of
-                Nothing ->
-                    "?"
-
-                Just x ->
-                    toString x
+            , answer |> Maybe.withDefault "?"
             )
 
         Done points ->
             ( toString points ++ " points.", default )
 
 
-type Msg
+type Msg question
     = Key KeyCode
     | Unlock
-    | TimeOut Id
+    | TimeOut (Id question)
 
 
-type alias Id =
-    ( Question, Nat )
+type alias Id question =
+    ( question, Nat )
 
 
 
@@ -170,7 +164,7 @@ type alias Id =
 -- TODO: make this impossible
 
 
-update : Msg -> State -> ( State, Cmd Msg )
+update : Msg question -> State question -> ( State question, Cmd (Msg question) )
 update msg state =
     case msg of
         Key k ->
@@ -185,7 +179,7 @@ update msg state =
                     , key
                     )
                 of
-                    ( RemainingTrials r, ( _, _, res ), _, _ ) ->
+                    ( RemainingTrials r, _, _, _ ) ->
                         let
                             ( newQuestionState, cmd ) =
                                 updateQuestionState
@@ -215,8 +209,8 @@ update msg state =
             { state | locked = False } |> pureState
 
         TimeOut ( question, nat ) ->
-            case ( state.questionState, state.currentQuestion ) of
-                ( RemainingTrials ( stateNat, ans ), ( _, _, res ) ) ->
+            case state.questionState of
+                RemainingTrials ( stateNat, ans ) ->
                     if question == state.currentQuestion && nat == stateNat then
                         -- the timeout is valid
                         let
@@ -260,19 +254,23 @@ keyInterp key =
 
 
 updateQuestionState :
-    Config
-    -> Question
+    Config question
+    -> question
     -> KeyInterp
     -> ( Nat, Answer )
-    -> ( QuestionState, Cmd Msg )
+    -> ( QuestionState, Cmd (Msg question) )
 updateQuestionState config question key ( nat, answer ) =
     case ( key, nat, answer ) of
         ( Digit d, nat, Nothing ) ->
-            RemainingTrials ( nat, Just d )
+            RemainingTrials ( nat, d |> toString |> Just )
+                |> pureState
+
+        ( Digit d, nat, Just "0" ) ->
+            RemainingTrials ( nat, d |> toString |> Just )
                 |> pureState
 
         ( Digit d, nat, Just ans ) ->
-            RemainingTrials ( nat, Just <| ans * 10 + d )
+            RemainingTrials ( nat, ans ++ toString d |> Just )
                 |> pureState
 
         ( Backspace, nat, Just ans ) ->
@@ -280,9 +278,9 @@ updateQuestionState config question key ( nat, answer ) =
                 ( nat
                 , let
                     newAns =
-                        ans // 10
+                        String.dropRight 1 ans
                   in
-                    if newAns == 0 then
+                    if String.isEmpty newAns then
                         Nothing
                     else
                         Just newAns
@@ -298,12 +296,12 @@ updateQuestionState config question key ( nat, answer ) =
 
 
 checkIfGoodAnswer :
-    Config
-    -> Question
+    Config question
+    -> question
     -> Nat
-    -> Maybe Int
-    -> ( QuestionState, Cmd Msg )
-checkIfGoodAnswer config (( _, _, res ) as question) nat answer =
+    -> Answer
+    -> ( QuestionState, Cmd (Msg question) )
+checkIfGoodAnswer config question nat answer =
     let
         badAnswer =
             case nat of
@@ -317,7 +315,7 @@ checkIfGoodAnswer config (( _, _, res ) as question) nat answer =
     in
         case answer of
             Just ans ->
-                if ans == res then
+                if ans == config.answerOf question then
                     Done (computePoints nat) |> pureState
                 else
                     badAnswer
@@ -340,7 +338,7 @@ computePoints nat =
 -- Commands and subscriptions
 
 
-setTimeout : Config -> Id -> Cmd Msg
+setTimeout : Config question -> Id question -> Cmd (Msg question)
 setTimeout { timeout } id =
     timeout
         * 1000
@@ -349,13 +347,13 @@ setTimeout { timeout } id =
         |> Task.perform (always <| TimeOut id)
 
 
-unlockCmd : Cmd Msg
+unlockCmd : Cmd (Msg question)
 unlockCmd =
     Process.sleep 500
         |> Task.perform (always Unlock)
 
 
-subscriptions : State -> Sub Msg
+subscriptions : State question -> Sub (Msg question)
 subscriptions { locked } =
     if locked then
         Sub.none
