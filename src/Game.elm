@@ -4,24 +4,31 @@ import Html exposing (Html)
 import Keyboard exposing (KeyCode)
 import Lib exposing (..)
 import Process
+import Random
+import Random.Set
+import Set exposing (Set)
 import Task
 
 
 main : Program Never (State ( Int, Int )) (Msg ( Int, Int ))
 main =
-    Html.program
-        { init = init
-        , view = view
-        , update = update
-        , subscriptions = subscriptions
-        }
+    let
+        questions =
+            Set.fromList [ ( 9, 3 ), ( 2, 3 ), ( 6, 7 ) ]
 
-
-type alias Config question =
-    { timeout : Int
-    , answerOf : question -> String
-    , viewQuestion : question -> String
-    }
+        config =
+            { timeout = 5
+            , answerOf = \( x, y ) -> toString (x * y)
+            , viewQuestion =
+                \( x, y ) -> toString x ++ " × " ++ toString y ++ " = "
+            }
+    in
+        Html.program
+            { init = init config questions
+            , view = view
+            , update = update
+            , subscriptions = subscriptions
+            }
 
 
 type Nat
@@ -39,199 +46,213 @@ toInt nat =
             1 + toInt nat
 
 
-type alias Answer =
-    Maybe String
+type QuestionState comparable
+    = None
+      -- trialsLeft is to be understood: how many are left after the current trial
+    | Active { question : comparable, answer : String, trialsLeft : Nat }
+    | Done { question : comparable, points : Int }
 
 
-type QuestionState
-    = RemainingTrials ( Nat, Answer )
-    | Done Int
-
-
-type alias State question =
-    { remaining : List question
-    , done : List ( question, Int )
-    , currentQuestion : question
-    , questionState : QuestionState
-    , locked : Bool
-    , config : Config question
+type alias Config comparable =
+    { timeout : Int
+    , answerOf : comparable -> String
+    , viewQuestion : comparable -> String
     }
 
 
-init : ( State ( Int, Int ), Cmd (Msg ( Int, Int )) )
-init =
-    let
-        question =
-            ( 9, 3 )
-
-        config =
-            { timeout = 5
-            , answerOf = \( x, y ) -> toString (x * y)
-            , viewQuestion =
-                \( x, y ) -> toString x ++ " × " ++ toString y ++ " = "
-            }
-    in
-        ( { remaining = [ ( 2, 3 ), ( 6, 7 ) ]
-          , done = []
-          , currentQuestion = question
-          , questionState = initQuestionState
-          , locked = False
-          , config = config
-          }
-        , setTimeout config ( question, initRemainings )
-        )
+type alias State comparable =
+    { remainingQuestions : Set comparable
+    , pastQuestions : List { question : comparable, points : Int }
+    , currentQuestion : QuestionState comparable
+    , nextQuestion : Maybe comparable
+    , locked : Bool
+    , config : Config comparable
+    }
 
 
-initQuestionState : QuestionState
-initQuestionState =
-    RemainingTrials ( initRemainings, Nothing )
+type Msg comparable
+    = Key KeyCode
+    | Unlock
+    | TimeOut (Id comparable)
+    | NextQuestion (Maybe comparable)
 
 
-initRemainings : Nat
-initRemainings =
-    Succ Zero
+type alias Id comparable =
+    -- Create a unique id from the question and the remaining trials
+    ( comparable, Nat )
 
 
-view : State question -> Html msg
+init : Config comparable -> Set comparable -> ( State comparable, Cmd (Msg comparable) )
+init config questions =
+    ( { remainingQuestions = questions
+      , pastQuestions = []
+      , currentQuestion = None
+      , nextQuestion = Nothing
+      , locked = False
+      , config = config
+      }
+    , chooseNextQuestion questions
+    )
+
+
+view : State comparable -> Html msg
 view state =
     Html.div []
-        [ viewDone state.config state.done
-        , viewCurrent state.config state.currentQuestion state.questionState
+        [ state.pastQuestions
+            |> List.map (viewPastQuestion state.config)
+            |> Html.ul []
+        , viewCurrent state.config state.currentQuestion
         , "Questions restantes: "
-            ++ (state.remaining |> List.length |> toString)
+            ++ (state.remainingQuestions |> Set.size |> toString)
             |> Html.text
         ]
 
 
-viewDone : Config question -> List ( question, Int ) -> Html msg
-viewDone config =
-    List.map (viewDoneQuestion config) >> Html.ul []
-
-
-viewDoneQuestion : Config question -> ( question, Int ) -> Html msg
-viewDoneQuestion config ( question, score ) =
+viewPastQuestion :
+    Config comparable
+    -> { question : comparable, points : Int }
+    -> Html msg
+viewPastQuestion config { question, points } =
     Html.li []
         [ config.viewQuestion question
             ++ config.answerOf question
             ++ " : "
-            ++ toString score
-            ++ " points."
+            ++ viewPoints points
             |> Html.text
         ]
 
 
-viewCurrent : Config question -> question -> QuestionState -> Html msg
-viewCurrent config question state =
-    let
-        ( info, currentAnswer ) =
-            viewQuestionState (config.answerOf question) state
-    in
-        Html.div []
+viewCurrent : Config comparable -> QuestionState comparable -> Html msg
+viewCurrent config state =
+    (case state of
+        None ->
+            [ Html.text "Question en cours de préparation." ]
+
+        Active { question, answer, trialsLeft } ->
             [ Html.div []
-                [ config.viewQuestion question
-                    ++ currentAnswer
+                [ question |> config.viewQuestion |> Html.text
+                , (if String.isEmpty answer then
+                    "?"
+                   else
+                    answer
+                  )
                     |> Html.text
                 ]
-            , Html.div [] [ info |> Html.text ]
+            , Html.div [] [ trialsLeft |> viewTrialsLeft |> Html.text ]
             ]
 
-
-viewQuestionState : String -> QuestionState -> ( String, String )
-viewQuestionState default state =
-    case state of
-        RemainingTrials ( nat, answer ) ->
-            ( (nat |> toInt |> (+) 1 |> toString) ++ " essais restants."
-            , answer |> Maybe.withDefault "?"
-            )
-
-        Done points ->
-            ( toString points ++ " points.", default )
+        Done { question, points } ->
+            [ Html.div []
+                [ question |> config.viewQuestion |> Html.text
+                , question |> config.answerOf |> Html.text
+                ]
+            , Html.div [] [ points |> viewPoints |> Html.text ]
+            ]
+    )
+        |> Html.div []
 
 
-type Msg question
-    = Key KeyCode
-    | Unlock
-    | TimeOut (Id question)
+viewTrialsLeft : Nat -> String
+viewTrialsLeft trialsLeft =
+    case trialsLeft of
+        Zero ->
+            "Dernier essai."
+
+        _ ->
+            (trialsLeft |> toInt |> (+) 1 |> toString) ++ " essais restants."
 
 
-type alias Id question =
-    ( question, Nat )
+viewPoints : Int -> String
+viewPoints points =
+    if points >= 2 then
+        toString points ++ " points"
+    else
+        toString points ++ " point"
 
 
-
--- Create a unique id from the question and the remaining trials
--- One must assume that there won't be identical questions in one set
--- TODO: make this impossible
-
-
-update : Msg question -> State question -> ( State question, Cmd (Msg question) )
+update :
+    Msg comparable
+    -> State comparable
+    -> ( State comparable, Cmd (Msg comparable) )
 update msg state =
     case msg of
-        Key k ->
-            let
-                key =
-                    keyInterp k
-            in
-                case
-                    ( state.questionState
-                    , state.currentQuestion
-                    , state.remaining
-                    , key
-                    )
-                of
-                    ( RemainingTrials r, _, _, _ ) ->
-                        let
-                            ( newQuestionState, cmd ) =
-                                updateQuestionState
-                                    state.config
-                                    state.currentQuestion
-                                    key
-                                    r
-                        in
-                            ( { state | questionState = newQuestionState }, cmd )
+        Key key ->
+            case
+                ( state.currentQuestion
+                , state.nextQuestion
+                , keyInterp key
+                )
+            of
+                ( Active questionState, _, Digit d ) ->
+                    { state
+                        | currentQuestion =
+                            { questionState
+                                | answer =
+                                    questionState.answer |> addToAnswer (toString d)
+                            }
+                                |> Active
+                    }
+                        |> pureState
 
-                    ( Done points, question, newQuestion :: questions, Enter ) ->
-                        ( { state
-                            | remaining = questions
-                            , done = ( question, points ) :: state.done
-                            , currentQuestion = newQuestion
-                            , questionState = initQuestionState
-                          }
-                          -- risk of confusion
-                          -- can we make it impossible to give the wrong id
-                        , setTimeout state.config ( newQuestion, initRemainings )
-                        )
+                ( Active questionState, _, Backspace ) ->
+                    { state
+                        | currentQuestion =
+                            { questionState
+                                | answer = questionState.answer |> removeFromAnswer
+                            }
+                                |> Active
+                    }
+                        |> pureState
 
-                    _ ->
-                        pureState state
+                ( Active questionState, _, Enter ) ->
+                    checkAnswer state questionState False
+
+                ( Done pastQuestion, Just newQuestion, Enter ) ->
+                    { state | pastQuestions = pastQuestion :: state.pastQuestions }
+                        |> updateNextQuestion newQuestion
+
+                _ ->
+                    pureState state
 
         Unlock ->
             { state | locked = False } |> pureState
 
-        TimeOut ( question, nat ) ->
-            case state.questionState of
-                RemainingTrials ( stateNat, ans ) ->
-                    if question == state.currentQuestion && nat == stateNat then
-                        -- the timeout is valid
-                        let
-                            ( newQuestionState, cmd ) =
-                                checkIfGoodAnswer state.config question nat ans
-                        in
-                            { state
-                                | questionState = newQuestionState
-                                , locked =
-                                    True
-                                    -- we lock for a little while in case the user
-                                    -- presses a key just after the timeout
-                            }
-                                ! [ cmd, unlockCmd ]
+        TimeOut id ->
+            case state.currentQuestion of
+                Active questionState ->
+                    if checkId id questionState then
+                        checkAnswer state questionState True
                     else
                         -- false alarm
                         pureState state
 
                 _ ->
-                    -- false alarm
                     pureState state
+
+        NextQuestion (Just question) ->
+            case state.currentQuestion of
+                None ->
+                    { state
+                        | remainingQuestions =
+                            Set.remove question state.remainingQuestions
+                    }
+                        |> updateNextQuestion question
+
+                Active _ ->
+                    -- normally, we shouldn't be in that branch
+                    pureState state
+
+                Done _ ->
+                    { state
+                        | nextQuestion = Just question
+                        , remainingQuestions =
+                            Set.remove question state.remainingQuestions
+                    }
+                        |> pureState
+
+        NextQuestion Nothing ->
+            -- game finished
+            pureState state
 
 
 type KeyInterp
@@ -253,75 +274,93 @@ keyInterp key =
         Ignore
 
 
-updateQuestionState :
-    Config question
-    -> question
-    -> KeyInterp
-    -> ( Nat, Answer )
-    -> ( QuestionState, Cmd (Msg question) )
-updateQuestionState config question key ( nat, answer ) =
-    case ( key, nat, answer ) of
-        ( Digit d, nat, Nothing ) ->
-            RemainingTrials ( nat, d |> toString |> Just )
-                |> pureState
-
-        ( Digit d, nat, Just "0" ) ->
-            RemainingTrials ( nat, d |> toString |> Just )
-                |> pureState
-
-        ( Digit d, nat, Just ans ) ->
-            RemainingTrials ( nat, ans ++ toString d |> Just )
-                |> pureState
-
-        ( Backspace, nat, Just ans ) ->
-            RemainingTrials
-                ( nat
-                , let
-                    newAns =
-                        String.dropRight 1 ans
-                  in
-                    if String.isEmpty newAns then
-                        Nothing
-                    else
-                        Just newAns
-                )
-                |> pureState
-
-        ( Enter, nat, Just ans ) ->
-            checkIfGoodAnswer config question nat (Just ans)
-
-        _ ->
-            RemainingTrials ( nat, answer )
-                |> pureState
+addToAnswer : String -> String -> String
+addToAnswer add answer =
+    if answer == "0" then
+        add
+    else
+        answer ++ add
 
 
-checkIfGoodAnswer :
-    Config question
-    -> question
-    -> Nat
-    -> Answer
-    -> ( QuestionState, Cmd (Msg question) )
-checkIfGoodAnswer config question nat answer =
+removeFromAnswer : String -> String
+removeFromAnswer answer =
+    String.dropRight 1 answer
+
+
+checkAnswer :
+    State comparable
+    -> { question : comparable, answer : String, trialsLeft : Nat }
+    -> Bool
+    -> ( State comparable, Cmd (Msg comparable) )
+checkAnswer state { question, answer, trialsLeft } timeout =
     let
-        badAnswer =
-            case nat of
+        cmds =
+            if timeout then
+                -- we lock for a little while in case the user
+                -- presses a key just after the timeout
+                [ unlockCmd ]
+            else
+                []
+    in
+        if String.isEmpty answer && not timeout then
+            pureState state
+        else if answer == state.config.answerOf question then
+            { state
+                | currentQuestion =
+                    Done
+                        { question = question
+                        , points = computePoints trialsLeft
+                        }
+                , locked = timeout
+            }
+                ! ([ chooseNextQuestion state.remainingQuestions ] ++ cmds)
+        else
+            case trialsLeft of
                 Zero ->
-                    Done 0 |> pureState
+                    { state
+                        | currentQuestion = Done { question = question, points = 0 }
+                        , locked = timeout
+                    }
+                        ! ([ chooseNextQuestion state.remainingQuestions ] ++ cmds)
 
                 Succ nat ->
-                    ( RemainingTrials ( nat, Nothing )
-                    , setTimeout config ( question, nat )
-                    )
-    in
-        case answer of
-            Just ans ->
-                if ans == config.answerOf question then
-                    Done (computePoints nat) |> pureState
-                else
-                    badAnswer
+                    let
+                        questionState =
+                            { question = question
+                            , answer = ""
+                            , trialsLeft = nat
+                            }
+                    in
+                        { state
+                            | currentQuestion = Active questionState
+                            , locked = timeout
+                        }
+                            ! ([ setTimeout state.config questionState ] ++ cmds)
 
-            Nothing ->
-                badAnswer
+
+updateNextQuestion :
+    comparable
+    -> State comparable
+    -> ( State comparable, Cmd (Msg comparable) )
+updateNextQuestion newQuestion state =
+    let
+        questionState =
+            { question = newQuestion
+            , answer = ""
+            , trialsLeft = Succ Zero
+            }
+    in
+        ( { state
+            | currentQuestion = Active questionState
+            , nextQuestion = Nothing
+          }
+        , setTimeout state.config questionState
+        )
+
+
+checkId : ( a, b ) -> { c | question : a, trialsLeft : b } -> Bool
+checkId id { question, trialsLeft } =
+    id == ( question, trialsLeft )
 
 
 computePoints : Nat -> number
@@ -338,22 +377,29 @@ computePoints nat =
 -- Commands and subscriptions
 
 
-setTimeout : Config question -> Id question -> Cmd (Msg question)
-setTimeout { timeout } id =
+setTimeout :
+    Config comparable
+    -> { a | question : comparable, trialsLeft : Nat }
+    -> Cmd (Msg comparable)
+setTimeout { timeout } { question, trialsLeft } =
     timeout
         * 1000
         |> toFloat
         |> Process.sleep
-        |> Task.perform (always <| TimeOut id)
+        |> Task.perform (( question, trialsLeft ) |> TimeOut |> always)
 
 
-unlockCmd : Cmd (Msg question)
+unlockCmd : Cmd (Msg comparable)
 unlockCmd =
-    Process.sleep 500
-        |> Task.perform (always Unlock)
+    Process.sleep 500 |> Task.perform (always Unlock)
 
 
-subscriptions : State question -> Sub (Msg question)
+chooseNextQuestion : Set comparable -> Cmd (Msg comparable)
+chooseNextQuestion questions =
+    Random.Set.sample questions |> Random.generate NextQuestion
+
+
+subscriptions : State comparable -> Sub (Msg comparable)
 subscriptions { locked } =
     if locked then
         Sub.none
