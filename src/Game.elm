@@ -22,6 +22,7 @@ main =
 
         config =
             { timeout = 5
+            , nbTrials = 2
             , answerOf = \( x, y ) -> toString (x * y)
             , viewQuestion =
                 \( x, y ) -> toString x ++ " × " ++ toString y ++ " = "
@@ -44,6 +45,7 @@ type QuestionState comparable
 
 type alias Config comparable =
     { timeout : Int
+    , nbTrials : Int
     , answerOf : comparable -> String
     , viewQuestion : comparable -> String
     }
@@ -51,7 +53,7 @@ type alias Config comparable =
 
 type alias State comparable =
     { remainingQuestions : Set comparable
-    , nbRemainingQuestions : Int
+    , nbRemainingQuestions : Counter
     , pastQuestions : List { question : comparable, points : Int }
     , currentQuestion : QuestionState comparable
     , nextQuestion : Maybe comparable
@@ -79,7 +81,7 @@ init :
     -> ( State comparable, Cmd (Msg comparable) )
 init config questions nbQuestions =
     ( { remainingQuestions = questions
-      , nbRemainingQuestions = nbQuestions
+      , nbRemainingQuestions = Counter.init nbQuestions
       , pastQuestions = []
       , currentQuestion = None
       , nextQuestion = Nothing
@@ -99,7 +101,7 @@ view state =
             |> Html.ul []
         , viewCurrent state.config state.currentQuestion
         , "Questions restantes: "
-            ++ (state.nbRemainingQuestions |> toString)
+            ++ (Counter.print state.nbRemainingQuestions)
             |> Html.text
         ]
 
@@ -122,7 +124,7 @@ viewCurrent : Config comparable -> QuestionState comparable -> Html msg
 viewCurrent config state =
     (case state of
         None ->
-            [ Html.text "Question en cours de préparation." ]
+            []
 
         Active { question, answer, trialsLeft } ->
             [ Html.div []
@@ -175,10 +177,7 @@ update msg state =
     case msg of
         Key key ->
             case
-                ( state.currentQuestion
-                , state.nextQuestion
-                , keyInterp key
-                )
+                ( state.currentQuestion, state.nextQuestion, keyInterp key )
             of
                 ( Active questionState, _, Digit d ) ->
                     { state
@@ -205,7 +204,10 @@ update msg state =
                     checkAnswer state questionState False
 
                 ( Done pastQuestion, Just newQuestion, Enter ) ->
-                    { state | pastQuestions = pastQuestion :: state.pastQuestions }
+                    { state
+                        | pastQuestions = pastQuestion :: state.pastQuestions
+                        , currentQuestion = None
+                    }
                         |> updateNextQuestion newQuestion
 
                 _ ->
@@ -229,25 +231,14 @@ update msg state =
         NextQuestion (Just question) ->
             case state.currentQuestion of
                 None ->
-                    { state
-                        | remainingQuestions =
-                            Set.remove question state.remainingQuestions
-                        , nbRemainingQuestions = state.nbRemainingQuestions - 1
-                    }
-                        |> updateNextQuestion question
+                    state |> updateNextQuestion question
 
                 Active _ ->
                     -- normally, we shouldn't be in that branch
                     pureState state
 
                 Done _ ->
-                    { state
-                        | nextQuestion = Just question
-                        , remainingQuestions =
-                            Set.remove question state.remainingQuestions
-                        , nbRemainingQuestions = state.nbRemainingQuestions - 1
-                    }
-                        |> pureState
+                    { state | nextQuestion = Just question } |> pureState
 
         NextQuestion Nothing ->
             -- game finished
@@ -302,10 +293,7 @@ checkAnswer state { question, answer, trialsLeft } timeout =
                 []
 
         nextQuestionCmds =
-            if state.nbRemainingQuestions >= 1 then
-                [ chooseNextQuestion state.remainingQuestions ]
-            else
-                []
+            [ chooseNextQuestion state.remainingQuestions ]
     in
         if String.isEmpty answer && not timeout then
             pureState state
@@ -350,19 +338,27 @@ updateNextQuestion :
     -> State comparable
     -> ( State comparable, Cmd (Msg comparable) )
 updateNextQuestion newQuestion state =
-    let
-        questionState =
-            { question = newQuestion
-            , answer = ""
-            , trialsLeft = Counter.init 1
-            }
-    in
-        ( { state
-            | currentQuestion = Active questionState
-            , nextQuestion = Nothing
-          }
-        , setTimeout state.config questionState
-        )
+    case state.nbRemainingQuestions |> Counter.decr of
+        Nothing ->
+            pureState state
+
+        Just nbRemainingQuestions ->
+            let
+                questionState =
+                    { question = newQuestion
+                    , answer = ""
+                    , trialsLeft = state.config.nbTrials - 1 |> Counter.init
+                    }
+            in
+                ( { state
+                    | currentQuestion = Active questionState
+                    , nextQuestion = Nothing
+                    , remainingQuestions =
+                        state.remainingQuestions |> Set.remove newQuestion
+                    , nbRemainingQuestions = nbRemainingQuestions
+                  }
+                , setTimeout state.config questionState
+                )
 
 
 checkId : ( a, b ) -> { c | question : a, trialsLeft : b } -> Bool
