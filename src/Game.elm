@@ -38,8 +38,8 @@ main =
 
 type QuestionState comparable
     = None
-      -- trialsLeft is to be understood: how many are left after the current trial
-    | Active { question : comparable, answer : String, trialsLeft : Counter }
+      -- nbTrialsLeft is to be understood: how many are left after the current trial
+    | Active { question : comparable, answer : String, nbTrialsLeft : Counter }
     | Done { question : comparable, points : Int }
 
 
@@ -53,7 +53,7 @@ type alias Config comparable =
 
 type alias State comparable =
     { remainingQuestions : Set comparable
-    , nbRemainingQuestions : Counter
+    , nbQuestionsLeft : Counter
     , pastQuestions : List { question : comparable, points : Int }
     , currentQuestion : QuestionState comparable
     , nextQuestion : Maybe comparable
@@ -65,13 +65,13 @@ type alias State comparable =
 type Msg comparable
     = Key KeyCode
     | Unlock
-    | TimeOut (Id comparable)
+    | TimeOut Id
     | NextQuestion (Maybe comparable)
 
 
-type alias Id comparable =
-    -- Create a unique id from the question and the remaining trials
-    ( comparable, Counter )
+type alias Id =
+    -- create a unique id from the nb of questions left and the nb of trials left
+    ( Counter, Counter )
 
 
 init :
@@ -81,7 +81,7 @@ init :
     -> ( State comparable, Cmd (Msg comparable) )
 init config questions nbQuestions =
     ( { remainingQuestions = questions
-      , nbRemainingQuestions = Counter.init nbQuestions
+      , nbQuestionsLeft = Counter.init nbQuestions
       , pastQuestions = []
       , currentQuestion = None
       , nextQuestion = Nothing
@@ -101,7 +101,7 @@ view state =
             |> Html.ul []
         , viewCurrent state.config state.currentQuestion
         , "Questions restantes: "
-            ++ (Counter.print state.nbRemainingQuestions)
+            ++ (Counter.print state.nbQuestionsLeft)
             |> Html.text
         ]
 
@@ -126,7 +126,7 @@ viewCurrent config state =
         None ->
             []
 
-        Active { question, answer, trialsLeft } ->
+        Active { question, answer, nbTrialsLeft } ->
             [ Html.div []
                 [ question |> config.viewQuestion |> Html.text
                 , (if String.isEmpty answer then
@@ -136,7 +136,7 @@ viewCurrent config state =
                   )
                     |> Html.text
                 ]
-            , Html.div [] [ trialsLeft |> viewTrialsLeft |> Html.text ]
+            , Html.div [] [ nbTrialsLeft |> viewTrialsLeft |> Html.text ]
             ]
 
         Done { question, points } ->
@@ -153,11 +153,11 @@ viewCurrent config state =
 viewTrialsLeft : Counter -> String
 viewTrialsLeft =
     Counter.printWith
-        (\trialsLeft ->
-            if trialsLeft == 0 then
+        (\nbTrialsLeft ->
+            if nbTrialsLeft == 0 then
                 "Dernier essai."
             else
-                (trialsLeft + 1 |> toString) ++ " essais restants."
+                (nbTrialsLeft + 1 |> toString) ++ " essais restants."
         )
 
 
@@ -219,7 +219,7 @@ update msg state =
         TimeOut id ->
             case state.currentQuestion of
                 Active questionState ->
-                    if checkId id questionState then
+                    if checkId id state then
                         checkAnswer state questionState True
                     else
                         -- false alarm
@@ -279,10 +279,10 @@ removeFromAnswer answer =
 
 checkAnswer :
     State comparable
-    -> { question : comparable, answer : String, trialsLeft : Counter }
+    -> { question : comparable, answer : String, nbTrialsLeft : Counter }
     -> Bool
     -> ( State comparable, Cmd (Msg comparable) )
-checkAnswer state { question, answer, trialsLeft } timeout =
+checkAnswer state { question, answer, nbTrialsLeft } timeout =
     let
         unlockCmds =
             if timeout then
@@ -302,13 +302,13 @@ checkAnswer state { question, answer, trialsLeft } timeout =
                 | currentQuestion =
                     Done
                         { question = question
-                        , points = computePoints trialsLeft
+                        , points = computePoints nbTrialsLeft
                         }
                 , locked = timeout
             }
                 ! (unlockCmds ++ nextQuestionCmds)
         else
-            case Counter.decr trialsLeft of
+            case Counter.decr nbTrialsLeft of
                 Nothing ->
                     { state
                         | currentQuestion = Done { question = question, points = 0 }
@@ -316,20 +316,21 @@ checkAnswer state { question, answer, trialsLeft } timeout =
                     }
                         ! (unlockCmds ++ nextQuestionCmds)
 
-                Just trialsLeft ->
+                Just nbTrialsLeft ->
                     let
                         questionState =
                             { question = question
                             , answer = ""
-                            , trialsLeft = trialsLeft
+                            , nbTrialsLeft = nbTrialsLeft
                             }
                     in
                         { state
                             | currentQuestion = Active questionState
                             , locked = timeout
                         }
-                            ! ([ setTimeout state.config questionState ]
-                                ++ unlockCmds
+                            ! (setTimeout state.config.timeout
+                                ( state.nbQuestionsLeft, nbTrialsLeft )
+                                :: unlockCmds
                               )
 
 
@@ -338,16 +339,19 @@ updateNextQuestion :
     -> State comparable
     -> ( State comparable, Cmd (Msg comparable) )
 updateNextQuestion newQuestion state =
-    case state.nbRemainingQuestions |> Counter.decr of
+    case state.nbQuestionsLeft |> Counter.decr of
         Nothing ->
             pureState state
 
-        Just nbRemainingQuestions ->
+        Just nbQuestionsLeft ->
             let
+                nbTrialsLeft =
+                    state.config.nbTrials - 1 |> Counter.init
+
                 questionState =
                     { question = newQuestion
                     , answer = ""
-                    , trialsLeft = state.config.nbTrials - 1 |> Counter.init
+                    , nbTrialsLeft = nbTrialsLeft
                     }
             in
                 ( { state
@@ -355,15 +359,20 @@ updateNextQuestion newQuestion state =
                     , nextQuestion = Nothing
                     , remainingQuestions =
                         state.remainingQuestions |> Set.remove newQuestion
-                    , nbRemainingQuestions = nbRemainingQuestions
+                    , nbQuestionsLeft = nbQuestionsLeft
                   }
-                , setTimeout state.config questionState
+                , setTimeout state.config.timeout ( nbQuestionsLeft, nbTrialsLeft )
                 )
 
 
-checkId : ( a, b ) -> { c | question : a, trialsLeft : b } -> Bool
-checkId id { question, trialsLeft } =
-    id == ( question, trialsLeft )
+checkId : Id -> State comparable -> Bool
+checkId id state =
+    case state.currentQuestion of
+        Active { nbTrialsLeft } ->
+            id == ( state.nbQuestionsLeft, nbTrialsLeft )
+
+        _ ->
+            False
 
 
 computePoints : Counter -> number
@@ -380,16 +389,9 @@ computePoints counter =
 -- Commands and subscriptions
 
 
-setTimeout :
-    Config comparable
-    -> { a | question : comparable, trialsLeft : Counter }
-    -> Cmd (Msg comparable)
-setTimeout { timeout } { question, trialsLeft } =
-    timeout
-        * 1000
-        |> toFloat
-        |> Process.sleep
-        |> Task.perform (( question, trialsLeft ) |> TimeOut |> always)
+setTimeout : number -> Id -> Cmd (Msg comparable)
+setTimeout timeout id =
+    timeout * 1000 |> Process.sleep |> Task.perform (always <| TimeOut id)
 
 
 unlockCmd : Cmd (Msg comparable)
