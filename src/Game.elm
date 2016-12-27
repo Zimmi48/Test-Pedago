@@ -108,6 +108,7 @@ view : State comparable -> Html msg
 view state =
     Html.div []
         [ state.pastQuestions
+            |> List.reverse
             |> List.map (viewPastQuestion state.config)
             |> Html.ul []
         , viewCurrent state.config state.currentQuestion
