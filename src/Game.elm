@@ -123,7 +123,7 @@ viewCurrent : Config comparable -> QuestionState comparable -> Html msg
 viewCurrent config state =
     (case state of
         None ->
-            []
+            [ "Appuyer sur Entrée pour commencer." |> Html.text ]
 
         Active { question, answer, nbTrialsLeft } ->
             [ Html.div []
@@ -144,6 +144,7 @@ viewCurrent config state =
                 , question |> config.answerOf |> Html.text
                 ]
             , Html.div [] [ points |> viewPoints |> Html.text ]
+            , Html.div [] [ "Appuyer sur Entrée pour continuer." |> Html.text ]
             ]
     )
         |> Html.div []
@@ -204,6 +205,9 @@ update msg state =
                     }
                         |> updateNextQuestion newQuestion
 
+                ( None, Just newQuestion, Enter ) ->
+                    updateNextQuestion newQuestion state
+
                 _ ->
                     Return.singleton state
 
@@ -223,19 +227,10 @@ update msg state =
                     Return.singleton state
 
         NextQuestion (Just question) ->
-            case state.currentQuestion of
-                None ->
-                    state |> updateNextQuestion question
-
-                Active _ ->
-                    -- normally, we shouldn't be in that branch
-                    Return.singleton state
-
-                Done _ ->
-                    Return.singleton { state | nextQuestion = Just question }
+            Return.singleton { state | nextQuestion = Just question }
 
         NextQuestion Nothing ->
-            -- game finished
+            -- TODO: game finished
             Return.singleton state
 
 
