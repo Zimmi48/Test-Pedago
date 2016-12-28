@@ -63,7 +63,7 @@ type alias State comparable =
 
 
 type Msg comparable
-    = Key KeyCode
+    = Key KeyInterp
     | Unlock
     | TimeOut Id
     | NextQuestion (Maybe comparable)
@@ -175,7 +175,7 @@ update :
 update msg state =
     case msg of
         Key key ->
-            case ( state.currentQuestion, state.nextQuestion, keyInterp key ) of
+            case ( state.currentQuestion, state.nextQuestion, key ) of
                 ( Active questionState, _, Digit d ) ->
                     questionState.answer
                         |> addToAnswer (toString d)
@@ -399,4 +399,4 @@ subscriptions { locked } =
     if locked then
         Sub.none
     else
-        Keyboard.downs Key
+        Keyboard.downs (keyInterp >> Key)
