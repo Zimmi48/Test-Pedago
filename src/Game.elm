@@ -3,10 +3,10 @@ module Game exposing (..)
 import Counter.Decreasing as Counter exposing (Counter)
 import Html exposing (Html)
 import Keyboard exposing (KeyCode)
-import Lib exposing (..)
 import Process
 import Random
 import Random.Set
+import Return exposing (Return)
 import Set exposing (Set)
 import Task
 
@@ -44,7 +44,7 @@ type QuestionState comparable
 
 
 type alias Config comparable =
-    { timeout : Int
+    { timeout : Float
     , nbTrials : Int
     , answerOf : comparable -> String
     , viewQuestion : comparable -> String
@@ -78,18 +78,17 @@ init :
     Config comparable
     -> Set comparable
     -> Int
-    -> ( State comparable, Cmd (Msg comparable) )
+    -> Return (Msg comparable) (State comparable)
 init config questions nbQuestions =
-    ( { remainingQuestions = questions
-      , nbQuestionsLeft = Counter.init nbQuestions
-      , pastQuestions = []
-      , currentQuestion = None
-      , nextQuestion = Nothing
-      , locked = False
-      , config = config
-      }
-    , chooseNextQuestion questions
-    )
+    { remainingQuestions = questions
+    , nbQuestionsLeft = Counter.init nbQuestions
+    , pastQuestions = []
+    , currentQuestion = None
+    , nextQuestion = Nothing
+    , locked = False
+    , config = config
+    }
+        |> chooseNextQuestion
 
 
 view : State comparable -> Html msg
@@ -172,33 +171,28 @@ viewPoints points =
 update :
     Msg comparable
     -> State comparable
-    -> ( State comparable, Cmd (Msg comparable) )
+    -> Return (Msg comparable) (State comparable)
 update msg state =
     case msg of
         Key key ->
-            case
-                ( state.currentQuestion, state.nextQuestion, keyInterp key )
-            of
+            case ( state.currentQuestion, state.nextQuestion, keyInterp key ) of
                 ( Active questionState, _, Digit d ) ->
-                    { state
-                        | currentQuestion =
-                            { questionState
-                                | answer =
-                                    questionState.answer |> addToAnswer (toString d)
-                            }
-                                |> Active
-                    }
-                        |> pureState
+                    questionState.answer
+                        |> addToAnswer (toString d)
+                        |> (\answer -> { questionState | answer = answer })
+                        |> (\currentQuestion ->
+                                { state | currentQuestion = Active currentQuestion }
+                           )
+                        |> Return.singleton
 
                 ( Active questionState, _, Backspace ) ->
-                    { state
-                        | currentQuestion =
-                            { questionState
-                                | answer = questionState.answer |> removeFromAnswer
-                            }
-                                |> Active
-                    }
-                        |> pureState
+                    questionState.answer
+                        |> removeFromAnswer
+                        |> (\answer -> { questionState | answer = answer })
+                        |> (\currentQuestion ->
+                                { state | currentQuestion = Active currentQuestion }
+                           )
+                        |> Return.singleton
 
                 ( Active questionState, _, Enter ) ->
                     checkAnswer state questionState False
@@ -211,10 +205,10 @@ update msg state =
                         |> updateNextQuestion newQuestion
 
                 _ ->
-                    pureState state
+                    Return.singleton state
 
         Unlock ->
-            { state | locked = False } |> pureState
+            Return.singleton { state | locked = False }
 
         TimeOut id ->
             case state.currentQuestion of
@@ -223,10 +217,10 @@ update msg state =
                         checkAnswer state questionState True
                     else
                         -- false alarm
-                        pureState state
+                        Return.singleton state
 
                 _ ->
-                    pureState state
+                    Return.singleton state
 
         NextQuestion (Just question) ->
             case state.currentQuestion of
@@ -235,14 +229,14 @@ update msg state =
 
                 Active _ ->
                     -- normally, we shouldn't be in that branch
-                    pureState state
+                    Return.singleton state
 
                 Done _ ->
-                    { state | nextQuestion = Just question } |> pureState
+                    Return.singleton { state | nextQuestion = Just question }
 
         NextQuestion Nothing ->
             -- game finished
-            pureState state
+            Return.singleton state
 
 
 type KeyInterp
@@ -281,88 +275,67 @@ checkAnswer :
     State comparable
     -> { question : comparable, answer : String, nbTrialsLeft : Counter }
     -> Bool
-    -> ( State comparable, Cmd (Msg comparable) )
+    -> Return (Msg comparable) (State comparable)
 checkAnswer state { question, answer, nbTrialsLeft } timeout =
-    let
-        unlockCmds =
-            if timeout then
-                -- we lock for a little while in case the user
-                -- presses a key just after the timeout
-                [ unlockCmd ]
-            else
-                []
-
-        nextQuestionCmds =
-            [ chooseNextQuestion state.remainingQuestions ]
-    in
-        if String.isEmpty answer && not timeout then
-            pureState state
-        else if answer == state.config.answerOf question then
-            { state
-                | currentQuestion =
-                    Done
-                        { question = question
-                        , points = computePoints nbTrialsLeft
-                        }
-                , locked = timeout
-            }
-                ! (unlockCmds ++ nextQuestionCmds)
-        else
+    if String.isEmpty answer && not timeout then
+        -- we do not take Enter into account if the answer is empty
+        Return.singleton state
+    else
+        (if answer == state.config.answerOf question then
+            -- correct!
+            Done { question = question, points = computePoints nbTrialsLeft }
+         else
+            -- wrong answer: do we have some trials left?
             case Counter.decr nbTrialsLeft of
                 Nothing ->
-                    { state
-                        | currentQuestion = Done { question = question, points = 0 }
-                        , locked = timeout
-                    }
-                        ! (unlockCmds ++ nextQuestionCmds)
+                    Done { question = question, points = 0 }
 
                 Just nbTrialsLeft ->
-                    let
-                        questionState =
-                            { question = question
-                            , answer = ""
-                            , nbTrialsLeft = nbTrialsLeft
-                            }
-                    in
-                        { state
-                            | currentQuestion = Active questionState
-                            , locked = timeout
+                    Active
+                        { question = question
+                        , answer = ""
+                        , nbTrialsLeft = nbTrialsLeft
                         }
-                            ! (setTimeout state.config.timeout
-                                ( state.nbQuestionsLeft, nbTrialsLeft )
-                                :: unlockCmds
-                              )
+        )
+            |> (\currentQuestion -> { state | currentQuestion = currentQuestion })
+            |> chooseNextQuestion
+            |> Return.andThen setTimeout
+            |> (if timeout then
+                    -- we lock for a little while in case the user
+                    -- presses a key just after the timeout
+                    Return.andThen setLock
+                else
+                    identity
+               )
 
 
 updateNextQuestion :
     comparable
     -> State comparable
-    -> ( State comparable, Cmd (Msg comparable) )
+    -> Return (Msg comparable) (State comparable)
 updateNextQuestion newQuestion state =
-    case state.nbQuestionsLeft |> Counter.decr of
+    case Counter.decr state.nbQuestionsLeft of
         Nothing ->
-            pureState state
+            Return.singleton state
 
         Just nbQuestionsLeft ->
             let
                 nbTrialsLeft =
                     state.config.nbTrials - 1 |> Counter.init
-
-                questionState =
-                    { question = newQuestion
-                    , answer = ""
-                    , nbTrialsLeft = nbTrialsLeft
-                    }
             in
-                ( { state
-                    | currentQuestion = Active questionState
+                { state
+                    | currentQuestion =
+                        Active
+                            { question = newQuestion
+                            , answer = ""
+                            , nbTrialsLeft = nbTrialsLeft
+                            }
                     , nextQuestion = Nothing
                     , remainingQuestions =
-                        state.remainingQuestions |> Set.remove newQuestion
+                        Set.remove newQuestion state.remainingQuestions
                     , nbQuestionsLeft = nbQuestionsLeft
-                  }
-                , setTimeout state.config.timeout ( nbQuestionsLeft, nbTrialsLeft )
-                )
+                }
+                    |> setTimeout
 
 
 checkId : Id -> State comparable -> Bool
@@ -389,19 +362,36 @@ computePoints counter =
 -- Commands and subscriptions
 
 
-setTimeout : number -> Id -> Cmd (Msg comparable)
-setTimeout timeout id =
-    timeout * 1000 |> Process.sleep |> Task.perform (always <| TimeOut id)
+chooseNextQuestion : State comparable -> Return (Msg comparable) (State comparable)
+chooseNextQuestion state =
+    case state.currentQuestion of
+        Active _ ->
+            Return.singleton state
+
+        _ ->
+            Random.Set.sample state.remainingQuestions
+                |> Random.generate NextQuestion
+                |> Return.return state
 
 
-unlockCmd : Cmd (Msg comparable)
-unlockCmd =
-    Process.sleep 500 |> Task.perform (always Unlock)
+setTimeout : State comparable -> Return (Msg comparable) (State comparable)
+setTimeout state =
+    case state.currentQuestion of
+        Active { nbTrialsLeft } ->
+            Task.perform
+                (( state.nbQuestionsLeft, nbTrialsLeft ) |> TimeOut |> always)
+                (state.config.timeout * 1000 |> Process.sleep)
+                |> Return.return state
+
+        _ ->
+            Return.singleton state
 
 
-chooseNextQuestion : Set comparable -> Cmd (Msg comparable)
-chooseNextQuestion questions =
-    Random.Set.sample questions |> Random.generate NextQuestion
+setLock : State comparable -> Return (Msg comparable) (State comparable)
+setLock state =
+    Process.sleep 500
+        |> Task.perform (always Unlock)
+        |> Return.return { state | locked = True }
 
 
 subscriptions : State comparable -> Sub (Msg comparable)
