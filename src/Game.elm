@@ -27,6 +27,17 @@ main =
             , answerOf = \( x, y ) -> toString (x * y)
             , viewQuestion =
                 \( x, y ) -> toString x ++ " × " ++ toString y ++ " = "
+            , allowedKey = \key -> key >= 48 && key <= 57
+            , addToAnswer =
+                \add answer ->
+                    let
+                        app =
+                            add |> Char.fromCode |> String.fromChar
+                    in
+                        if answer == "0" then
+                            app
+                        else
+                            answer ++ app
             }
     in
         Html.program
@@ -49,6 +60,8 @@ type alias Config comparable =
     , nbTrials : Int
     , answerOf : comparable -> String
     , viewQuestion : comparable -> String
+    , allowedKey : KeyCode -> Bool
+    , addToAnswer : KeyCode -> String -> String
     }
 
 
@@ -237,24 +250,16 @@ type Key
     | Backspace
 
 
-keyInterp : KeyCode -> Msg comparable
-keyInterp key =
-    if key >= 48 && key <= 57 then
-        key |> Char.fromCode |> String.fromChar |> addToAnswer |> EditKey
+keyInterp : Config comparable -> KeyCode -> Msg comparable
+keyInterp config key =
+    if config.allowedKey key then
+        key |> config.addToAnswer |> EditKey
     else if key == 13 then
         EnterKey
     else if key == 8 then
         String.dropRight 1 |> EditKey
     else
         NoOp
-
-
-addToAnswer : String -> String -> String
-addToAnswer add answer =
-    if answer == "0" then
-        add
-    else
-        answer ++ add
 
 
 checkAnswer :
@@ -383,8 +388,8 @@ setLock state =
 
 
 subscriptions : State comparable -> Sub (Msg comparable)
-subscriptions { locked } =
-    if locked then
+subscriptions state =
+    if state.locked then
         Sub.none
     else
-        Keyboard.downs keyInterp
+        Keyboard.downs (keyInterp state.config)
