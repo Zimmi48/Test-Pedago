@@ -16,7 +16,7 @@ main : Program Never (State ( Int, Int )) (Msg ( Int, Int ))
 main =
     let
         questions =
-            List.range 2 9
+            List.range 3 9
                 |> (\l -> List.map (\x -> List.map ((,) x) l) l)
                 |> List.concat
                 |> Set.fromList
