@@ -1,5 +1,6 @@
 module Game exposing (..)
 
+import Char
 import Counter.Decreasing as Counter exposing (Counter)
 import Html exposing (Html)
 import Keyboard exposing (KeyCode)
@@ -63,10 +64,12 @@ type alias State comparable =
 
 
 type Msg comparable
-    = Key KeyInterp
+    = EnterKey
+    | EditKey Key
     | Unlock
     | TimeOut Id
     | NextQuestion (Maybe comparable)
+    | NoOp
 
 
 type alias Id =
@@ -175,41 +178,40 @@ update :
     -> Return (Msg comparable) (State comparable)
 update msg state =
     case msg of
-        Key key ->
-            case ( state.currentQuestion, key ) of
-                ( Active questionState, Digit d ) ->
-                    questionState.answer
-                        |> addToAnswer (toString d)
+        EditKey key ->
+            (case state.currentQuestion of
+                Active questionState ->
+                    (case key of
+                        Char c ->
+                            questionState.answer ++ c |> normalize
+
+                        Backspace ->
+                            questionState.answer |> String.dropRight 1
+                    )
                         |> (\answer -> { questionState | answer = answer })
                         |> (\currentQuestion ->
                                 { state | currentQuestion = Active currentQuestion }
                            )
-                        |> Return.singleton
 
-                ( Active questionState, Backspace ) ->
-                    questionState.answer
-                        |> removeFromAnswer
-                        |> (\answer -> { questionState | answer = answer })
-                        |> (\currentQuestion ->
-                                { state | currentQuestion = Active currentQuestion }
-                           )
-                        |> Return.singleton
+                _ ->
+                    state
+            )
+                |> Return.singleton
 
-                ( Active questionState, Enter ) ->
+        EnterKey ->
+            case state.currentQuestion of
+                Active questionState ->
                     checkAnswer state questionState False
 
-                ( Done pastQuestion, Enter ) ->
+                Done pastQuestion ->
                     { state
                         | pastQuestions = pastQuestion :: state.pastQuestions
                         , currentQuestion = None
                     }
                         |> updateNextQuestion
 
-                ( None, Enter ) ->
+                None ->
                     updateNextQuestion state
-
-                _ ->
-                    Return.singleton state
 
         Unlock ->
             Return.singleton { state | locked = False }
@@ -233,37 +235,33 @@ update msg state =
             -- TODO: game finished
             Return.singleton state
 
+        NoOp ->
+            Return.singleton state
 
-type KeyInterp
-    = Digit Int
-    | Enter
+
+type Key
+    = Char String
     | Backspace
-    | Ignore
 
 
-keyInterp : KeyCode -> KeyInterp
+keyInterp : KeyCode -> Msg comparable
 keyInterp key =
     if key >= 48 && key <= 57 then
-        Digit (key - 48)
+        EditKey <| Char <| String.fromChar <| Char.fromCode key
     else if key == 13 then
-        Enter
+        EnterKey
     else if key == 8 then
-        Backspace
+        EditKey <| Backspace
     else
-        Ignore
+        NoOp
 
 
-addToAnswer : String -> String -> String
-addToAnswer add answer =
-    if answer == "0" then
-        add
+normalize : String -> String
+normalize answer =
+    if String.startsWith "0" answer then
+        String.dropLeft 1 answer
     else
-        answer ++ add
-
-
-removeFromAnswer : String -> String
-removeFromAnswer answer =
-    String.dropRight 1 answer
+        answer
 
 
 checkAnswer :
@@ -396,4 +394,4 @@ subscriptions { locked } =
     if locked then
         Sub.none
     else
-        Keyboard.downs (keyInterp >> Key)
+        Keyboard.downs keyInterp
