@@ -65,7 +65,7 @@ type alias State comparable =
 
 type Msg comparable
     = EnterKey
-    | EditKey Key
+    | EditKey (String -> String)
     | Unlock
     | TimeOut Id
     | NextQuestion (Maybe comparable)
@@ -178,19 +178,12 @@ update :
     -> Return (Msg comparable) (State comparable)
 update msg state =
     case msg of
-        EditKey key ->
+        EditKey edit ->
             (case state.currentQuestion of
                 Active questionState ->
-                    (case key of
-                        Char c ->
-                            questionState.answer ++ c |> normalize
-
-                        Backspace ->
-                            questionState.answer |> String.dropRight 1
-                    )
-                        |> (\answer -> { questionState | answer = answer })
-                        |> (\currentQuestion ->
-                                { state | currentQuestion = Active currentQuestion }
+                    { questionState | answer = edit questionState.answer }
+                        |> (\questionState ->
+                                { state | currentQuestion = Active questionState }
                            )
 
                 _ ->
@@ -247,21 +240,21 @@ type Key
 keyInterp : KeyCode -> Msg comparable
 keyInterp key =
     if key >= 48 && key <= 57 then
-        EditKey <| Char <| String.fromChar <| Char.fromCode key
+        key |> Char.fromCode |> String.fromChar |> addToAnswer |> EditKey
     else if key == 13 then
         EnterKey
     else if key == 8 then
-        EditKey <| Backspace
+        String.dropRight 1 |> EditKey
     else
         NoOp
 
 
-normalize : String -> String
-normalize answer =
-    if String.startsWith "0" answer then
-        String.dropLeft 1 answer
+addToAnswer : String -> String -> String
+addToAnswer add answer =
+    if answer == "0" then
+        add
     else
-        answer
+        answer ++ add
 
 
 checkAnswer :
