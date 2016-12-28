@@ -176,8 +176,8 @@ update :
 update msg state =
     case msg of
         Key key ->
-            case ( state.currentQuestion, state.nextQuestion, key ) of
-                ( Active questionState, _, Digit d ) ->
+            case ( state.currentQuestion, key ) of
+                ( Active questionState, Digit d ) ->
                     questionState.answer
                         |> addToAnswer (toString d)
                         |> (\answer -> { questionState | answer = answer })
@@ -186,7 +186,7 @@ update msg state =
                            )
                         |> Return.singleton
 
-                ( Active questionState, _, Backspace ) ->
+                ( Active questionState, Backspace ) ->
                     questionState.answer
                         |> removeFromAnswer
                         |> (\answer -> { questionState | answer = answer })
@@ -195,18 +195,18 @@ update msg state =
                            )
                         |> Return.singleton
 
-                ( Active questionState, _, Enter ) ->
+                ( Active questionState, Enter ) ->
                     checkAnswer state questionState False
 
-                ( Done pastQuestion, Just newQuestion, Enter ) ->
+                ( Done pastQuestion, Enter ) ->
                     { state
                         | pastQuestions = pastQuestion :: state.pastQuestions
                         , currentQuestion = None
                     }
-                        |> updateNextQuestion newQuestion
+                        |> updateNextQuestion
 
-                ( None, Just newQuestion, Enter ) ->
-                    updateNextQuestion newQuestion state
+                ( None, Enter ) ->
+                    updateNextQuestion state
 
                 _ ->
                     Return.singleton state
@@ -293,8 +293,7 @@ checkAnswer state { question, answer, nbTrialsLeft } timeout =
                         }
         )
             |> (\currentQuestion -> { state | currentQuestion = currentQuestion })
-            |> chooseNextQuestion
-            |> Return.andThen setTimeout
+            |> setTimeout
             |> (if timeout then
                     -- we lock for a little while in case the user
                     -- presses a key just after the timeout
@@ -304,16 +303,15 @@ checkAnswer state { question, answer, nbTrialsLeft } timeout =
                )
 
 
-updateNextQuestion :
-    comparable
-    -> State comparable
-    -> Return (Msg comparable) (State comparable)
-updateNextQuestion newQuestion state =
-    case Counter.decr state.nbQuestionsLeft of
-        Nothing ->
-            Return.singleton state
-
-        Just nbQuestionsLeft ->
+updateNextQuestion : State comparable -> Return (Msg comparable) (State comparable)
+updateNextQuestion state =
+    case
+        ( state.currentQuestion
+        , state.nextQuestion
+        , Counter.decr state.nbQuestionsLeft
+        )
+    of
+        ( None, Just newQuestion, Just nbQuestionsLeft ) ->
             let
                 nbTrialsLeft =
                     state.config.nbTrials - 1 |> Counter.init
@@ -331,6 +329,10 @@ updateNextQuestion newQuestion state =
                     , nbQuestionsLeft = nbQuestionsLeft
                 }
                     |> setTimeout
+                    |> Return.andThen chooseNextQuestion
+
+        _ ->
+            Return.singleton state
 
 
 checkId : Id -> State comparable -> Bool
@@ -359,11 +361,11 @@ computePoints counter =
 
 chooseNextQuestion : State comparable -> Return (Msg comparable) (State comparable)
 chooseNextQuestion state =
-    case state.currentQuestion of
-        Active _ ->
+    case state.nextQuestion of
+        Just _ ->
             Return.singleton state
 
-        _ ->
+        Nothing ->
             Random.Set.sample state.remainingQuestions
                 |> Random.generate NextQuestion
                 |> Return.return state
