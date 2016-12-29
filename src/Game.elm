@@ -194,14 +194,12 @@ update msg state =
         EditKey edit ->
             (case state.currentQuestion of
                 Active questionState ->
-                    { questionState | answer = edit questionState.answer }
-                        |> (\questionState ->
-                                { state | currentQuestion = Active questionState }
-                           )
+                    Active { questionState | answer = edit questionState.answer }
 
-                _ ->
-                    state
+                questionState ->
+                    questionState
             )
+                |> (\question -> { state | currentQuestion = question })
                 |> Return.singleton
 
         EnterKey ->
